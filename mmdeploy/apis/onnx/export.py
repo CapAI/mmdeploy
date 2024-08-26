@@ -27,6 +27,7 @@ def export(
     verbose: bool = False,
     keep_initializers_as_inputs: Optional[bool] = None,
     optimize: bool = False,
+    do_constant_folding: bool = True,
 ):
     """Export a PyTorch model into ONNX format. This is a wrap of
     `torch.onnx.export` with some enhancement.
@@ -138,6 +139,7 @@ def export(
             dynamic_axes=dynamic_axes,
             keep_initializers_as_inputs=keep_initializers_as_inputs,
             verbose=verbose,
+            do_constant_folding=do_constant_folding,
         )
 
         if input_metas is not None:
