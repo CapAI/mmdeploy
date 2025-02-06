@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Optional, Sequence
 import numpy as np
 
 import torch
+from mmengine.dataset.utils import default_collate
 from mmengine import Config
 from mmengine.registry import Registry
 from mmengine.model.base_model.data_preprocessor import BaseDataPreprocessor
@@ -14,7 +16,7 @@ from mmdeploy.codebase.mmrotate.deploy.rotated_detection import RotatedDetection
 from mmdeploy.codebase.mmrotate.deploy.rotated_detection_model import __BACKEND_MODEL  # type: ignore
 
 from cap_mmlab.utils import register_all_modules
-from cap_mmlab.core.collate import video_detection_collate
+# from cap_mmlab.core.collate import video_detection_collate
 
 
 CAPMMLAB_TASK_REGISTRY = Registry("cap_mmlab_tasks")
@@ -102,6 +104,24 @@ def build_detection_model(
     )
     return backend_detector
 
+def create_video_infos(imgs: list[str]) -> dict:
+    """ mock video infos from a small inference set"""
+    video_infos = {
+        'images': [
+            {
+                'img_id': Path(img).name,
+                'file_name': img,
+                'img_path': img,
+                'lon': 4.009455682918974,
+                'lat': 51.95734364569949,
+                'theta': 5.2,
+                'radar_range': 1533,
+                'instances': []
+            } for img in imgs],
+        'video_length': len(imgs),
+        'video_id': 0,
+    }
+    return video_infos
 
 @CAPMMLAB_TASK_REGISTRY.register_module(Task.ROTATED_VIDEO_DETECTION.value)
 class RotatedVideoDetection(RotatedDetection):
@@ -184,19 +204,19 @@ class RotatedVideoDetection(RotatedDetection):
         cfg = process_model_config(self.model_cfg, imgs, input_shape)
 
         pipeline = cfg.test_pipeline
-
         test_pipeline = Compose(pipeline)
 
-        # for now only support 1 batch of images
-        data = []
-        for img in imgs:
-            if isinstance(img, np.ndarray):
-                data_ = dict(img=img, img_id=0)
-            else:
-                data_ = dict(img_path=img, img_id=0)
-            data.append(data_)
-        data = [test_pipeline(data)]
-        data = video_detection_collate(data)
+        if (
+        any(['RefFrameSample' in x['type'] for x in pipeline] ) or
+        any(['TransformBroadcaster' in x['type'] for x in pipeline])
+        ):
+            video_infos = create_video_infos(imgs)
+            data = test_pipeline(video_infos)
+
+        else:
+            raise NotImplementedError("Only support video pipeline through transform broadcaster for now")
+
+        data = default_collate([data])
         if data_preprocessor is not None:
             data = data_preprocessor(data, False)
             return data, data["inputs"]
